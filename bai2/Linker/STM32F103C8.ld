@@ -23,8 +23,21 @@ SECTIONS
         *(.text*)
         *(.rodata*)
         . = ALIGN(4);
-        _etext = .;
     } > FLASH
+
+    .ARM.extab :
+    {
+        *(.ARM.extab* .gnu.linkonce.armextab.*)
+    } > FLASH
+
+    .ARM.exidx :
+    {
+        __exidx_start = .;
+        *(.ARM.exidx* .gnu.linkonce.armexidx.*)
+        __exidx_end = .;
+    } > FLASH
+
+    _etext = LOADADDR(.ARM.exidx) + SIZEOF(.ARM.exidx);
 
     .data : AT(_etext)
     {

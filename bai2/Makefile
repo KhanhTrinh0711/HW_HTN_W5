@@ -1,63 +1,81 @@
-PROJECT = firmware
-APP     ?= b2
+PROJECT     ?= firmware
+CC          = arm-none-eabi-gcc
+OBJCOPY     = arm-none-eabi-objcopy
+SIZE        = arm-none-eabi-size
+FLASH_TOOL  = st-flash
 
-CC      = arm-none-eabi-gcc
-OBJCOPY = arm-none-eabi-objcopy
-SIZE    = arm-none-eabi-size
+CPU         ?= -mcpu=cortex-m3
+MCU         ?= $(CPU) -mthumb
+BUILD_DIR   ?= Build
+BIN_DIR     ?= Bin
+LINKER_SCRIPT ?= Linker/STM32F103C8.ld
 
-CPU = -mcpu=cortex-m3
-MCU = $(CPU) -mthumb
+# Set these to the locations of the FreeRTOS kernel and the MCU startup file.
+FREERTOS_DIR    ?= Lib/FreeRTOS-Kernel
+FREERTOS_PORT   ?= $(FREERTOS_DIR)/portable/GCC/ARM_CM3
+FREERTOS_HEAP   ?= $(FREERTOS_DIR)/portable/MemMang/heap_4.c
+FREERTOS_CONFIG ?= .
+STARTUP_SRC     ?= startup.c
 
-BUILD_DIR  = Build
-BIN_DIR    = Bin
-LINKER_DIR = Linker
+SOURCES = \
+	main.c \
+	$(STARTUP_SRC) \
+	$(FREERTOS_DIR)/tasks.c \
+	$(FREERTOS_DIR)/queue.c \
+	$(FREERTOS_DIR)/list.c \
+	$(FREERTOS_PORT)/port.c \
+	$(FREERTOS_HEAP)
 
-OBJECTS = \
-	$(BUILD_DIR)/$(APP).o \
-	$(BUILD_DIR)/startup.o
+OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
+INCLUDES = \
+	-I. \
+	-I$(FREERTOS_CONFIG) \
+	-I$(FREERTOS_DIR)/include \
+	-I$(FREERTOS_PORT)
 
 CFLAGS = \
 	$(MCU) \
+	-std=c11 \
 	-O0 \
 	-g3 \
 	-Wall \
 	-Wextra \
 	-ffreestanding \
+	-fno-builtin \
+	-fno-unwind-tables \
+	-fno-asynchronous-unwind-tables \
 	-ffunction-sections \
-	-fdata-sections
+	-fdata-sections \
+	$(INCLUDES)
 
 LDFLAGS = \
 	$(MCU) \
-	-T$(LINKER_DIR)/STM32F103C8.ld \
+	-T$(LINKER_SCRIPT) \
 	-nostdlib \
 	-Wl,--gc-sections \
-	-Wl,-Map=$(BUILD_DIR)/$(PROJECT).map
+	-Wl,-Map=$(BUILD_DIR)/$(PROJECT).map \
+	-lc \
+	-lgcc
 
-all: directories $(BIN_DIR)/$(PROJECT).bin
+all: $(BIN_DIR)/$(PROJECT).bin
 
-directories:
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(BIN_DIR)
-
-$(BUILD_DIR)/$(APP).o: Src/$(APP).c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/startup.o: Src/startup.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BIN_DIR)/$(PROJECT).elf: $(OBJECTS)
+$(BIN_DIR)/$(PROJECT).elf: $(OBJECTS) $(LINKER_SCRIPT)
+	@mkdir -p $(dir $@)
 	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 
 $(BIN_DIR)/$(PROJECT).bin: $(BIN_DIR)/$(PROJECT).elf
 	$(OBJCOPY) -O binary $< $@
 
-flash: all
-	st-flash write $(BIN_DIR)/$(PROJECT).bin 0x08000000
-	st-flash reset
+$(BUILD_DIR)/%.o: %.c main.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+flash: $(BIN_DIR)/$(PROJECT).bin
+	$(FLASH_TOOL) write $< 0x08000000
+	$(FLASH_TOOL) reset
 
 clean:
-	rm -rf $(BUILD_DIR)/*
-	rm -rf $(BIN_DIR)/*
+	rm -rf $(BUILD_DIR) $(BIN_DIR)
 
-.PHONY: all clean flash directories
+.PHONY: all flash clean
