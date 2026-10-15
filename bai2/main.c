@@ -35,10 +35,13 @@ static void clock_init(void)
 
 static void gpio_init(void)
 {
-    RCC_APB2ENR |= RCC_AFIOEN | RCC_IOPAEN;
+    RCC_APB2ENR |= RCC_AFIOEN | RCC_IOPAEN | RCC_IOPCEN;
 
-    GPIOA_CRL = (GPIOA_CRL & ~0xFu) | 0x8u;
+    GPIOA_CRL = (GPIOA_CRL & ~(0xFu << 20)) | (0x8u << 20);
     GPIOA_ODR |= BUTTON_PIN;
+
+    GPIOC_CRH = (GPIOC_CRH & ~(0xFu << 20)) | (0x6u << 20);
+    GPIOC_ODR |= LED_PIN;
 
     GPIOA_CRH = (GPIOA_CRH & ~((0xFu << 4) | (0xFu << 8)))
               | (0xBu << 4)
@@ -80,7 +83,7 @@ static void uart1_write_count(uint32_t count)
         count /= 10u;
     } while (count != 0u);
 
-    uart1_write_text("Button presses: ");
+    uart1_write_text("Btn count: ");
     while (digitCount > 0u)
     {
         uart1_write_char(digits[--digitCount]);
@@ -88,16 +91,16 @@ static void uart1_write_count(uint32_t count)
     uart1_write_text("\r\n");
 }
 
-static void exti0_init(void)
+static void exti_init(void)
 {
-    AFIO_EXTICR1 &= ~0xFu;
+    AFIO_EXTICR2 &= ~(0xFu << 4);
     EXTI_IMR &= ~BUTTON_PIN;
     EXTI_RTSR &= ~BUTTON_PIN;
     EXTI_FTSR |= BUTTON_PIN;
     EXTI_PR = BUTTON_PIN;
 
-    NVIC_IPR[6] = (uint8_t)configMAX_SYSCALL_INTERRUPT_PRIORITY;
-    NVIC_ISER0 = EXTI0_IRQ;
+    NVIC_IPR[23] = (uint8_t)configMAX_SYSCALL_INTERRUPT_PRIORITY;
+    NVIC_ISER0 = EXTI9_5_IRQ;
     EXTI_IMR |= BUTTON_PIN;
 }
 
@@ -106,26 +109,35 @@ static void uart_task(void *argument)
     uint32_t count;
     (void)argument;
 
+    uart1_write_text("UART ready. Press PA5.\r\n");
     for (;;)
     {
         if (xQueueReceive(buttonCountQueue, &count, portMAX_DELAY) == pdPASS)
         {
             uart1_write_count(count);
+            GPIOC_ODR &= ~LED_PIN;
+            vTaskDelay(pdMS_TO_TICKS(100u));
+            GPIOC_ODR |= LED_PIN;
         }
     }
 }
 
-void EXTI0_IRQHandler(void)
+static void button_pressed_from_isr(uint32_t pin)
 {
     BaseType_t higherPriorityTaskWoken = pdFALSE;
     uint32_t count;
 
+    EXTI_PR = pin;
+    count = ++buttonPressCount;
+    (void)xQueueSendFromISR(buttonCountQueue, &count, &higherPriorityTaskWoken);
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+}
+
+void EXTI9_5_IRQHandler(void)
+{
     if ((EXTI_PR & BUTTON_PIN) != 0u)
     {
-        EXTI_PR = BUTTON_PIN;
-        count = ++buttonPressCount;
-        (void)xQueueSendFromISR(buttonCountQueue, &count, &higherPriorityTaskWoken);
-        portYIELD_FROM_ISR(higherPriorityTaskWoken);
+        button_pressed_from_isr(BUTTON_PIN);
     }
 }
 
@@ -136,10 +148,11 @@ int main(void)
     uart1_init();
 
     buttonCountQueue = xQueueCreate(BUTTON_QUEUE_LENGTH, sizeof(uint32_t));
-    xTaskCreate(uart_task, "UART", configMINIMAL_STACK_SIZE + 128u,
-                NULL, tskIDLE_PRIORITY + 1u, NULL);
+    configASSERT(buttonCountQueue != NULL);
+    configASSERT(xTaskCreate(uart_task, "UART", configMINIMAL_STACK_SIZE + 128u,
+                             NULL, tskIDLE_PRIORITY + 1u, NULL) == pdPASS);
 
-    exti0_init();
+    exti_init();
     vTaskStartScheduler();
 
     for (;;)

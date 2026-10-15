@@ -11,6 +11,7 @@
 #define FLASH_ACR       REG32(0x40022000u)
 
 #define AFIO_EXTICR1    REG32(0x40010008u)
+#define AFIO_EXTICR2    REG32(0x4001000Cu)
 #define EXTI_IMR        REG32(0x40010400u)
 #define EXTI_RTSR       REG32(0x40010408u)
 #define EXTI_FTSR       REG32(0x4001040Cu)
@@ -19,6 +20,8 @@
 #define GPIOA_CRL       REG32(0x40010800u)
 #define GPIOA_CRH       REG32(0x40010804u)
 #define GPIOA_ODR       REG32(0x4001080Cu)
+#define GPIOC_CRH       REG32(0x40011004u)
+#define GPIOC_ODR       REG32(0x4001100Cu)
 
 #define USART1_SR       REG32(0x40013800u)
 #define USART1_DR       REG32(0x40013804u)
@@ -30,13 +33,15 @@
 
 #define RCC_AFIOEN      (1u << 0)
 #define RCC_IOPAEN      (1u << 2)
+#define RCC_IOPCEN      (1u << 4)
 #define RCC_USART1EN    (1u << 14)
-#define EXTI0_IRQ       (1u << 6)
-#define BUTTON_PIN      (1u << 0)
+#define EXTI9_5_IRQ     (1u << 23)
+#define BUTTON_PIN      (1u << 5)
+#define LED_PIN         (1u << 13)
 #define BUTTON_QUEUE_LENGTH 16u
 #define UART_BAUD       115200u
 #define SYSTEM_CLOCK_HZ 72000000u
 
-void EXTI0_IRQHandler(void);
+void EXTI9_5_IRQHandler(void);
 
 #endif
